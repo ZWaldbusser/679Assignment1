@@ -1,0 +1,25 @@
+body {
+  font-family: Arial, sans-serif;
+  text-align: center;
+}
+
+#chart-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+#tooltip {
+  position: absolute;
+  background: white;
+  border: 1px solid #ccc;
+  padding: 6px 10px;
+  pointer-events: none;
+  font-size: 12px;
+  border-radius: 4px;
+  box-shadow: 0 0 5px rgba(0,0,0,0.3);
+}
+
+.hidden {
+  display: none;
+}
