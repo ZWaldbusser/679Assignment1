@@ -1,11 +1,15 @@
 console.log("assignment.js loaded");
+const w = 1000;
+const h = 600;
 const svg = d3.select("#matrix-chart")
-  .attr("width", 800)
-  .attr("height", 500);
+  .attr("width", w)
+  .attr("height", h);
 
+let mode = "max"; // 🔹 toggle state (max ↔ min)
 
 d3.csv("temperature_daily.csv").then(rawData => {
   console.log("Loaded rows:", rawData.length);
+
   const parseDate = d3.timeParse("%Y-%m-%d");
 
   rawData.forEach(d => {
@@ -14,174 +18,219 @@ d3.csv("temperature_daily.csv").then(rawData => {
     d.min_temperature = +d.min_temperature;
     d.avgTemp = (d.max_temperature + d.min_temperature) / 2;
     d.year = d.date.getFullYear();
-    d.month = d.date.getMonth(); // 0 = Jan
+    d.month = d.date.getMonth();
   });
 
   const latestYear = d3.max(rawData, d => d.year);
   const last10Years = rawData.filter(d => d.year >= latestYear - 9);
 
-const monthlyRollup = d3.rollups(
-  last10Years,
-  v => ({
-    avgTemp: d3.mean(v, d => d.avgTemp),
-    maxTemp: d3.max(v, d => d.max_temperature),
-    minTemp: d3.min(v, d => d.min_temperature)
-  }),
-  d => d.year,
-  d => d.month
-);
+  // 🔹 GROUP DAILY DATA FOR SPARKLINES
+  const dailyLookup = d3.group(
+    last10Years,
+    d => d.year,
+    d => d.month
+  );
 
-const matrixData = monthlyRollup.flatMap(([year, months]) =>
-  months.map(([month, stats]) => ({
-    year,
-    month,
-    avgTemp: stats.avgTemp,
-    max_temperature: stats.maxTemp,
-    min_temperature: stats.minTemp
-  }))
-);
+  const monthlyRollup = d3.rollups(
+    last10Years,
+    v => ({
+      avgTemp: d3.mean(v, d => d.avgTemp),
+      maxTemp: d3.max(v, d => d.max_temperature),
+      minTemp: d3.min(v, d => d.min_temperature)
+    }),
+    d => d.year,
+    d => d.month
+  );
 
+  const matrixData = monthlyRollup.flatMap(([year, months]) =>
+    months.map(([month, stats]) => ({
+      year,
+      month,
+      avgTemp: stats.avgTemp,
+      max_temperature: stats.maxTemp,
+      min_temperature: stats.minTemp
+    }))
+  );
 
   matrixData.sort((a, b) =>
     a.year === b.year ? a.month - b.month : a.year - b.year
   );
-  
-  console.log("Matrix rows:", matrixData.length);
-  console.table(matrixData);
 
-//DRAWING CELLS
-const margin = { top: 40, right: 20, bottom: 40, left: 60 };
-const width = 800 - margin.left - margin.right;
-const height = 500 - margin.top - margin.bottom;
+  // =========================
+  // LAYOUT
+  // =========================
+  const margin = { top: 40, right: 60, bottom: 40, left: 60 };
+  const width = w - margin.left - margin.right;
+  const height = h - margin.top - margin.bottom;
 
-// Clear SVG & create drawing group
-svg.selectAll("*").remove();
+  svg.selectAll("*").remove();
 
-const chart = svg
-  .append("g")
-  .attr("transform", `translate(${margin.left}, ${margin.top})`);
+  const chart = svg.append("g")
+    .attr("transform", `translate(${margin.left}, ${margin.top})`);
 
-// ---- Unique years & months ----
-const years = [...new Set(matrixData.map(d => d.year))];
-const months = d3.range(12); // 0–11
+  const years = [...new Set(matrixData.map(d => d.year))];
+  const months = d3.range(12);
 
-// ---- Scales ----
-const xScale = d3.scaleBand()
-  .domain(years)
-  .range([0, width])
-  .padding(0.05);
+  const xScale = d3.scaleBand()
+    .domain(years)
+    .range([0, width])
+    .padding(0.05);
 
-const yScale = d3.scaleBand()
-  .domain(months)
-  .range([0, height])
-  .padding(0.05);
+  const yScale = d3.scaleBand()
+    .domain(months)
+    .range([0, height])
+    .padding(0.05);
 
-// Color scale (warm palette for temperature)
-const colorScale = d3.scaleSequential()
-  .domain(d3.extent(matrixData, d => d.avgTemp))
-  .interpolator(d3.interpolateYlOrRd);
+  // =========================
+  // COLOR SCALE (Blue → Red)
+  // =========================
+  const colorScale = d3.scaleSequential()
+    .domain([0, 40])
+    .interpolator(d3.interpolateRdYlBu).domain([40, 0])
+    .clamp(true);
 
-const tooltip = d3.select("#tooltip");
+  function getValue(d) {
+    return mode === "max" ? d.max_temperature : d.min_temperature;
+  }
 
-chart.selectAll("rect")
-  .data(matrixData)
-  .join("rect")
-  .attr("x", d => xScale(d.year))
-  .attr("y", d => yScale(d.month))
-  .attr("width", xScale.bandwidth())
-  .attr("height", yScale.bandwidth())
-  .attr("fill", d => colorScale(d.avgTemp))
-  .on("mouseover", (event, d) => {
-    tooltip.classed("hidden", false)
-      .html(`
-        <strong>${monthNames[d.month]} ${d.year}</strong><br>
-        Max: ${d.max_temperature}°C<br>
-        Min: ${d.min_temperature}°C<br>
-        Avg: ${d.avgTemp.toFixed(1)}°C
-      `)
-      .style("left", (event.pageX + 10) + "px")
-      .style("top", (event.pageY - 28) + "px");
-  })
-  .on("mousemove", (event) => {
-    tooltip
-      .style("left", (event.pageX + 10) + "px")
-      .style("top", (event.pageY - 28) + "px");
-  })
-  .on("mouseout", () => {
-    tooltip.classed("hidden", true);
+  const tooltip = d3.select("#tooltip");
+
+  // =========================
+  // DRAW CELLS
+  // =========================
+  const cells = chart.selectAll("rect")
+    .data(matrixData)
+    .join("rect")
+    .attr("x", d => xScale(d.year))
+    .attr("y", d => yScale(d.month))
+    .attr("width", xScale.bandwidth())
+    .attr("height", yScale.bandwidth())
+    .attr("fill", d => colorScale(getValue(d)))
+    .on("mouseover", (event, d) => {
+      tooltip.classed("hidden", false)
+        .html(`
+          <strong>${monthNames[d.month]} ${d.year}</strong><br>
+          Max: ${d.max_temperature}°C<br>
+          Min: ${d.min_temperature}°C<br>
+          Avg: ${d.avgTemp.toFixed(1)}°C
+        `);
+    })
+    .on("mousemove", (event) => {
+      tooltip
+        .style("left", event.pageX + 10 + "px")
+        .style("top", event.pageY - 28 + "px");
+    })
+    .on("mouseout", () => tooltip.classed("hidden", true));
+
+  // =========================
+  // SPARKLINES (daily trends)
+  // =========================
+  const sparkGroup = chart.append("g").attr("class", "sparklines");
+
+  matrixData.forEach(d => {
+    const daily = dailyLookup.get(d.year)?.get(d.month);
+    if (!daily) return;
+
+    const xSpark = d3.scaleLinear()
+      .domain([0, daily.length - 1])
+      .range([2, xScale.bandwidth() - 2]);
+
+    const ySpark = d3.scaleLinear()
+      .domain([0, 40])
+      .range([yScale.bandwidth() - 2, 2]);
+
+    const line = d3.line()
+      .x((_, i) => xSpark(i))
+      .y(v => ySpark((v.max_temperature + v.min_temperature) / 2));
+
+    sparkGroup.append("path")
+      .datum(daily)
+      .attr("transform", `translate(${xScale(d.year)}, ${yScale(d.month)})`)
+      .attr("d", line)
+      .attr("fill", "none")
+      .attr("stroke", "rgba(0,0,0,0.65)")
+      .attr("stroke-width", 1.5)
+      .attr("pointer-events", "none"); // don't block tooltip
   });
 
+  // =========================
+  // TOGGLE ON CLICK
+  // =========================
+  svg.on("click", () => {
+    mode = mode === "max" ? "min" : "max";
 
-  // ---- Month labels ----
-const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    cells.transition()
+      .duration(400)
+      .attr("fill", d => colorScale(getValue(d)));
+  });
 
-chart.selectAll(".month-label")
-  .data(months)
-  .join("text")
-  .attr("class", "month-label")
-  .attr("x", -10)
-  .attr("y", d => yScale(d) + yScale.bandwidth() / 2)
-  .attr("text-anchor", "end")
-  .attr("dominant-baseline", "middle")
-  .text(d => monthNames[d]);
+  // =========================
+  // AXIS LABELS
+  // =========================
+  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-// ---- Year labels ----
-chart.selectAll(".year-label")
-  .data(years)
-  .join("text")
-  .attr("class", "year-label")
-  .attr("x", d => xScale(d) + xScale.bandwidth() / 2)
-  .attr("y", -10)
-  .attr("text-anchor", "middle")
-  .text(d => d);
+  chart.selectAll(".month-label")
+    .data(months)
+    .join("text")
+    .attr("class", "month-label")
+    .attr("x", -10)
+    .attr("y", d => yScale(d) + yScale.bandwidth()/2)
+    .attr("text-anchor", "end")
+    .attr("dominant-baseline", "middle")
+    .text(d => monthNames[d]);
 
+  chart.selectAll(".year-label")
+    .data(years)
+    .join("text")
+    .attr("class", "year-label")
+    .attr("x", d => xScale(d) + xScale.bandwidth()/2)
+    .attr("y", -10)
+    .attr("text-anchor", "middle")
+    .text(d => d);
 
-// --- Legend parameters (unchanged)
-const legendWidth = 20,
-      legendHeight = height,
-      legendMargin = 10;
+  // =========================
+  // STATIC LEGEND (0–40 °C)
+  // =========================
+  const legendHeight = height;
+  const legendWidth = 20;
 
-const legend = svg.append("g")
-  .attr("transform", `translate(${width + margin.left + legendMargin}, ${margin.top})`);
+  const legend = svg.append("g")
+    .attr("transform", `translate(${width + margin.left + 20}, ${margin.top})`);
 
-// --- Gradient (unchanged)
-const defs = svg.append("defs");
-const gradient = defs.append("linearGradient")
-  .attr("id", "legend-gradient")
-  .attr("x1","0%").attr("y1","100%")
-  .attr("x2","0%").attr("y2","0%");
+  const defs = svg.append("defs");
+  const gradient = defs.append("linearGradient")
+    .attr("id", "legend-gradient")
+    .attr("x1", "0%").attr("y1", "100%")
+    .attr("x2", "0%").attr("y2", "0%");
 
-const [minTemp, maxTemp] = d3.extent(matrixData, d => d.avgTemp);
-const nStops = 10;
-for(let i=0;i<nStops;i++){
-  const t = minTemp + i*(maxTemp-minTemp)/(nStops-1);
-  gradient.append("stop")
-    .attr("offset", `${(i/(nStops-1))*100}%`)
-    .attr("stop-color", colorScale(t));
-}
+  const legendMin = 0;
+  const legendMax = 40;
 
-// --- Legend rectangle
-legend.append("rect")
-  .attr("width", legendWidth)
-  .attr("height", legendHeight)
-  .style("fill", "url(#legend-gradient)");
+  const steps = 10;
+  for (let i = 0; i < steps; i++) {
+    const t = legendMin + i * (legendMax - legendMin) / (steps - 1);
+    gradient.append("stop")
+      .attr("offset", `${(i/(steps-1))*100}%`)
+      .attr("stop-color", colorScale(t));
+  }
 
-// --- Legend scale for axis
-const legendScale = d3.scaleLinear()
-  .domain([minTemp,maxTemp])
-  .range([legendHeight,0]);  // flip so higher temp = top
+  legend.append("rect")
+    .attr("width", legendWidth)
+    .attr("height", legendHeight)
+    .style("fill", "url(#legend-gradient)");
 
-// --- Add axis (with ticks)
-const legendAxis = d3.axisRight(legendScale)
-  .ticks(6)                 // number of markers/ticks
-  .tickSize(6)               // length of the tick marks
-  .tickFormat(d => d + "°C"); // label format
+  const legendScale = d3.scaleLinear()
+    .domain([legendMin, legendMax])
+    .range([legendHeight, 0]);
 
-legend.append("g")
-  .attr("transform", `translate(${legendWidth},0)`)
-  .call(legendAxis);
+  const legendAxis = d3.axisRight(legendScale)
+    .ticks(8)
+    .tickFormat(d => `${d}°C`);
 
+  legend.append("g")
+    .attr("transform", `translate(${legendWidth},0)`)
+    .call(legendAxis);
 
 }).catch(error => {
-    console.error("CSV failed to load:", error);
-  });
+  console.error("CSV failed to load:", error);
+});

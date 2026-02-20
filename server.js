@@ -6,19 +6,34 @@ const path = require('path');
 const hostname = '127.0.0.1';
 const port = 3000;
 
-const server = http.createServer((req, res) => {
-  // Set the content type to HTML
-  res.statusCode = 200;
-  res.setHeader('Content-Type', 'text/html');
+const mimeTypes = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.csv': 'text/csv',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.svg': 'image/svg+xml'
+};
 
-  // Read the index.html file and send its content as the response
-  fs.readFile(path.join(__dirname, 'index.html'), (err, data) => {
+const server = http.createServer((req, res) => {
+  let filePath = req.url === '/' 
+    ? path.join(__dirname, 'index.html')
+    : path.join(__dirname, req.url);
+
+  const ext = path.extname(filePath);
+  const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+  fs.readFile(filePath, (err, data) => {
     if (err) {
       res.statusCode = 404;
-      res.end('404: File Not Found');
-    } else {
-      res.end(data);
+      res.end(`404: File Not Found -> ${req.url}`);
+      return;
     }
+
+    res.writeHead(200, { 'Content-Type': contentType });
+    res.end(data);
   });
 });
 
