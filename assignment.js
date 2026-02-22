@@ -58,7 +58,7 @@ d3.csv("temperature_daily.csv").then(rawData => {
   // =========================
   // LAYOUT
   // =========================
-  const margin = { top: 40, right: 60, bottom: 40, left: 60 };
+  const margin = { top: 40, right: 75, bottom: 40, left: 60 };
   const width = w - margin.left - margin.right;
   const height = h - margin.top - margin.bottom;
 
