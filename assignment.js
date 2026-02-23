@@ -1,15 +1,19 @@
-//Setting Matrix Size
+// =========================
+// Matrix Size
+// =========================
 const w = 1000;
 const h = 600;
 const svg = d3.select("#matrix-chart")
   .attr("width", w)
   .attr("height", h);
 
-let mode = "max"; // 🔹 toggle state (max ↔ min)
+let mode = "max"; // toggle state (max ↔ min)
 
 d3.csv("temperature_daily.csv").then(rawData => {
   
-  // Data parsing
+  // =========================
+  // Data Parsing
+  // =========================
   console.log("Loaded rows:", rawData.length);
   const parseDate = d3.timeParse("%Y-%m-%d");
   rawData.forEach(d => {
@@ -23,7 +27,9 @@ d3.csv("temperature_daily.csv").then(rawData => {
   const latestYear = d3.max(rawData, d => d.year);
   const last10Years = rawData.filter(d => d.year >= latestYear - 9);
 
-  // GROUP DAILY DATA FOR SPARKLINES
+  // =========================
+  // Data for Mini-Graphs
+  // =========================
   const dailyLookup = d3.group(
     last10Years,
     d => d.year,
