@@ -1,3 +1,5 @@
+Interaction Log: https://chatgpt.com/share/699772d4-22c4-800c-aec1-3702b523b0d4
+
 As this was my first experience using D3.js, AI was used fairly liberally in this project.
 With that being said, much of the coding was done such that I still had a handle of what changes I was making.
 Towards the end, I believe the AI was forgetting bits of the conversation and ultimately left me to find and make the changes.
